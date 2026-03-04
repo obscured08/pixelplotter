@@ -4,8 +4,6 @@
 
 By calculating image gradients using OpenCV Sobel operators and plotting the perpendicular vector fields with Matplotlib, this script generates "streamline" portraits and abstract images.
 
-![Example Image Placeholder](link_to_your_example_image.jpg) 
-*(Add a link to one of your favorite outputs here!)*
 
 ## Features
 * **Granular Detail Control:** Adjust grid spacing and line density to range from minimalist abstract shapes to highly detailed photorealistic sketches.
