@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import argparse
 import random
-from matplotlib.colors import is_color_like, ListedColormap
+from matplotlib.colors import is_color_like, ListedColormap, LogNorm, PowerNorm
 
 # Full list of Matplotlib colormaps
 VALID_CMAPS = [
@@ -31,7 +31,7 @@ VALID_CMAPS = [
     'viridis_r', 'winter', 'winter_r'
 ]
 
-def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_color, intensity, smooth, sample_colors, density, gx_k, gy_k, integration, max_len, min_len, output_path, limit):
+def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_color, intensity, smooth, sample_colors, density, gx_k, gy_k, integration, max_len, min_len, output_path, limit, taper, unbroken, spread, norm_type, random_starts, padding, angle):
     if not os.path.isfile(image_path):
         print(f"Error: File '{image_path}' not found.")
         return
@@ -41,6 +41,16 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
         print("Error: Could not load image.")
         return
     
+    # Apply Padding (Border)
+    if padding > 0:
+        h, w = img_bgr.shape[:2]
+        pad_h = int(h * (padding / 100.0))
+        pad_w = int(w * (padding / 100.0))
+        # Background color for OpenCV is BGR
+        bg_bgr = (bg_color[2], bg_color[1], bg_color[0])
+        img_bgr = cv2.copyMakeBorder(img_bgr, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=bg_bgr)
+        print(f"[*] Applied {padding}% padding ({pad_w}px x {pad_h}px border)")
+    
     # limit resize stuff
     if limit > 0:
         h, w = img_bgr.shape[:2]
@@ -49,7 +59,6 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
             scale = limit / max_dim
             img_bgr = cv2.resize(img_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
             print(f"[*] Image downscaled to max dimension {limit}px (Scale factor: {scale:.2f})")
-    
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
@@ -77,9 +86,29 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
     X_s, Y_s = x[::skip, ::skip], y[::skip, ::skip]
     U_s, V_s = u[::skip, ::skip], v[::skip, ::skip]
     
+    # Apply vector rotation if angle is not 0
+    if angle != 0.0:
+        theta = np.radians(angle)
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+        U_rot = (U_s * cos_t) - (V_s * sin_t)
+        V_rot = (U_s * sin_t) + (V_s * cos_t)
+        U_s, V_s = U_rot, V_rot
+
     speed = np.sqrt(U_s**2 + V_s**2)
     brightness_sample = norm[::skip, ::skip]
-    lw_array = (brightness_sample * intensity) + 0.2
+    
+    # Taper logic
+    if taper != 0.0:
+        speed_norm = (speed - speed.min()) / (speed.max() - speed.min() + 1e-6)
+        
+        # Safeguard for negative exponents to avoid dividing by absolute zero
+        if taper < 0:
+            speed_norm = np.clip(speed_norm, 1e-4, 1.0)
+            
+        lw_array = (np.power(speed_norm, taper) * intensity) + 0.05
+    else:
+        lw_array = (brightness_sample * intensity) + 0.2
 
     # the colors
     active_cmap = None
@@ -100,6 +129,22 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
         line_color_data = speed
         active_cmap = 'viridis'
 
+    # Handle Normalization logic (only applies if mapped to speed)
+    active_norm = None
+    if norm_type != 'linear' and active_cmap and not sample_colors:
+        if norm_type == 'log':
+            active_norm = LogNorm(vmin=max(speed.min(), 1e-6), vmax=speed.max())
+        elif norm_type == 'power':
+            active_norm = PowerNorm(gamma=0.5, vmin=speed.min(), vmax=speed.max())
+
+    # Handle Random Start Points
+    starts = None
+    if random_starts > 0:
+        starts = np.column_stack([
+            np.random.uniform(X_s.min(), X_s.max(), random_starts),
+            np.random.uniform(Y_s.min(), Y_s.max(), random_starts)
+        ])
+
     final_bg = tuple(c/255.0 for c in bg_color)
     fig, ax = plt.subplots(figsize=(12, 10))
     fig.patch.set_facecolor(final_bg)
@@ -107,16 +152,31 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
     
     astyle = 'fancy' if show_arrows else '-'
     
-    ax.streamplot(X_s, Y_s, U_s, V_s, 
-                  color=line_color_data, 
-                  cmap=active_cmap, 
-                  linewidth=lw_array,
-                  density=density,
-                  arrowstyle=astyle, 
-                  arrowsize=1.2 * (intensity / 1.0),
-                  integration_direction=integration,
-                  maxlength=max_len,
-                  minlength=min_len)
+    # Determine the density logic (tuple override)
+    plot_density = tuple(spread) if spread else density
+
+    # Base Keyword Arguments for Streamplot
+    stream_kwargs = {
+        'color': line_color_data, 
+        'cmap': active_cmap, 
+        'linewidth': lw_array,
+        'density': plot_density,
+        'arrowstyle': astyle, 
+        'arrowsize': 1.2 * (intensity / 1.0),
+        'integration_direction': integration,
+        'maxlength': max_len,
+        'minlength': min_len
+    }
+
+    # Conditionally add advanced kwargs to prevent Matplotlib conflicts
+    if starts is not None:
+        stream_kwargs['start_points'] = starts
+    if active_norm is not None:
+        stream_kwargs['norm'] = active_norm
+    if unbroken:
+        stream_kwargs['broken_streamlines'] = False
+
+    ax.streamplot(X_s, Y_s, U_s, V_s, **stream_kwargs)
 
     ax.set_aspect('equal')
     ax.invert_yaxis()
@@ -176,6 +236,11 @@ if __name__ == "__main__":
         help="Controls the closeness of streamlines (Range: 0.1 to 10.0).\n"
              "  Higher values = more packed lines (less white space).\n"
              "Default: 3.0")
+             
+    parser.add_argument("-sp", "--spread", type=float, nargs=2, default=None,
+        metavar=('X', 'Y'),
+        help="Directional density as a tuple (e.g., 1.0 5.0). Overrides -den.\n"
+             "Allows stretching the grid to favor horizontal or vertical flow.")
     
     parser.add_argument("-s", "--smooth", type=int, default=3,
         help="Pre-processing gaussian Blur strength (Range: 0 to 99).\n"
@@ -183,7 +248,6 @@ if __name__ == "__main__":
              "  1-9: Flowing liquid lines (Natural resemblance).\n"
              "Default: 3")
 
-    
     parser.add_argument("-limit", "--limit", type=int, default=0,
         help="Optional: Maximum image dimension in pixels (e.g., 1500).\n"
              "If the image is larger, it will be downscaled before processing.\n"
@@ -221,6 +285,41 @@ if __name__ == "__main__":
              "  1.0+: Strict filter, keeps only massive sweeping curves.\n"
              "Default: 0.1")
 
+    parser.add_argument("-t", "--taper", type=float, default=0.0,
+        help="Apply an ink-stroke taper effect using an exponent.\n"
+             "  0.0: Off (Fixed width based on image brightness).\n"
+             "  1.0: Standard taper (Ink brush effect based on speed).\n"
+             "  2.0, 3.0+: Power Taper (Sharp calligraphy effect).\n"
+             "  0.5: Bulging effect (Thick lines, tiny tapers).\n"
+             " -1.0: Inverted taper (Thick in slow areas, thin in fast).\n"
+             "Default: 0.0")
+             
+    parser.add_argument("-p", "--padding", type=int, default=0,
+        help="Percentage of background-colored padding to add to edges (0-100).\n"
+             "Allows lines to taper out naturally before hitting the file boundary.\n"
+             "Default: 0")
+
+    parser.add_argument("-a", "--angle", type=float, default=0.0, 
+        help="Rotate the final vector field by a specific degree angle (e.g., 45.0).\n"
+             "Excellent for creating diagonal striping when paired with mismatched Sobel kernels.\n"
+             "Default: 0.0")
+
+    parser.add_argument("--norm", type=str, choices=['linear', 'log', 'power'], default='linear',
+        help="Color normalization curve for mapping speeds to colors.\n"
+             "  linear: Standard mapping.\n"
+             "  log: Emphasizes lower speeds.\n"
+             "  power: Accentuates highest speeds.\n"
+             "Default: linear")
+             
+    parser.add_argument("-rs", "--random-starts", type=int, default=0,
+        help="Number of random seed points for streamlines (e.g., 5000).\n"
+             "Overrides density grid seeding. Great for organic/chaotic looks.\n"
+             "Default: 0 (Off)")
+
+    parser.add_argument("--unbroken", action="store_true",
+        help="Allow lines to weave and overlap without being terminated by collision.\n"
+             "(Requires Matplotlib 3.6+).")
+
     parser.add_argument("--no-arrows", action="store_false", dest="arrows",
         help="Disable 'fancy' directional arrowheads.")
 
@@ -249,4 +348,8 @@ if __name__ == "__main__":
         args.cmap = random.choice(VALID_CMAPS)
         print(f"Randomly selected colormap: {args.cmap}")
 
-    generate_streamplot(args.image, args.detail, args.cmap, args.arrows, args.background, args.linewidth, args.smooth, args.sample, args.density, args.gx_ksize, args.gy_ksize, args.integration, args.maxlength, args.minlength, args.output, args.limit)
+    generate_streamplot(args.image, args.detail, args.cmap, args.arrows, args.background, 
+                        args.linewidth, args.smooth, args.sample, args.density, 
+                        args.gx_ksize, args.gy_ksize, args.integration, args.maxlength, 
+                        args.minlength, args.output, args.limit, args.taper, 
+                        args.unbroken, args.spread, args.norm, args.random_starts, args.padding, args.angle)
