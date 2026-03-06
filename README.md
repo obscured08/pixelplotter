@@ -20,7 +20,7 @@ This tool requires **Python 3** and the following libraries:
 
 You can install the dependencies via pip:
 
-    pip install opencv-python numpy matplotlib
+    pip3 install opencv-python numpy matplotlib
 
 ## Quick Start
 
