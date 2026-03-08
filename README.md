@@ -53,7 +53,7 @@ Run the script by pointing it to an image. By default, it will open a preview wi
 | `image` | Input Image | `None` | Path to the input image file. |
 | `-o`, `--output` | Output Path | `None` | Optional: Path to explicitly save the output image (e.g., 'result.png'). Skips display window. |
 | `-d`, `--detail` | Grid Detail | `8` | Grid spacing (Range: 2 to 100). Lower is slower/detailed, higher is abstract. |
-| `-c`, `--cmap` | Colormap | `viridis` | Color or Colormap choice. Accepts Matplotlib cmaps, hex, CSS names, or 'random'. |
+| `-c`, `--cmap` | Colormap | `viridis` | Color or Colormap choice. Accepts Matplotlib cmaps, hex, CSS names, comma-separated custom palettes, or 'random'. |
 | `-bg`, `--background` | Background | `255 255 255` | Background color as RGB integers (0-255). |
 | `-lw`, `--linewidth` | Linewidth | `1.5` | Base multiplier for line thickness (Range: 0.1 to 10.0). |
 | `-den`, `--density` | Density | `3.0` | Controls streamline closeness. Higher = more packed lines. |
@@ -67,6 +67,7 @@ Run the script by pointing it to an image. By default, it will open a preview wi
 | `-min`, `--minlength` | Min Length | `0.1` | Minimum line length. Lines shorter than this are deleted. |
 | `-t`, `--taper` | Ink Taper | `0.0` (Off) | Ink-stroke taper exponent. 1.0 = Standard, 2.0 = Calligraphy, -1.0 = Inverted. |
 | `-p`, `--padding` | Padding | `0` | Percentage of background-colored padding to add to edges. Allows lines to taper out. |
+| `-pm`, `--pad-mode` | Pad Mode | `constant` | Padding mode if -p is used. 'constant' creates a solid frame/boundary, 'replicate' stretches edge pixels for an organic bleed. |
 | `-a`, `--angle` | Angle | `0.0` | Rotate the final vector field by a specific degree angle (e.g., 45.0). |
 | `--norm` | Color Norm | `linear` | Color normalization curve for mapping speeds: 'linear', 'log', or 'power'. |
 | `-rs`, `--random-starts` | Random Starts | `0` (Off) | Number of random seed points. Overrides density grid. Great for organic/chaotic looks. |

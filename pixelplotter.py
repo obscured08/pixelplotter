@@ -31,7 +31,7 @@ VALID_CMAPS = [
     'viridis_r', 'winter', 'winter_r'
 ]
 
-def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_color, intensity, smooth, sample_colors, density, gx_k, gy_k, integration, max_len, min_len, output_path, limit, taper, unbroken, spread, norm_type, random_starts, padding, angle):
+def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_color, intensity, smooth, sample_colors, density, gx_k, gy_k, integration, max_len, min_len, output_path, limit, taper, unbroken, spread, norm_type, random_starts, padding, pad_mode, angle):
     if not os.path.isfile(image_path):
         print(f"Error: File '{image_path}' not found.")
         return
@@ -46,10 +46,15 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
         h, w = img_bgr.shape[:2]
         pad_h = int(h * (padding / 100.0))
         pad_w = int(w * (padding / 100.0))
-        # Background color for OpenCV is BGR
-        bg_bgr = (bg_color[2], bg_color[1], bg_color[0])
-        img_bgr = cv2.copyMakeBorder(img_bgr, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=bg_bgr)
-        print(f"[*] Applied {padding}% padding ({pad_w}px x {pad_h}px border)")
+        
+        if pad_mode == 'replicate':
+            img_bgr = cv2.copyMakeBorder(img_bgr, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_REPLICATE)
+        else:
+            # Background color for OpenCV is BGR
+            bg_bgr = (bg_color[2], bg_color[1], bg_color[0])
+            img_bgr = cv2.copyMakeBorder(img_bgr, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=bg_bgr)
+            
+        print(f"[*] Applied {padding}% padding ({pad_w}px x {pad_h}px border, mode: {pad_mode})")
     
     # limit resize stuff
     if limit > 0:
@@ -119,6 +124,16 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
         flat_colors = sampled_rgb.reshape(-1, 3)
         active_cmap = ListedColormap(flat_colors)
         line_color_data = np.arange(len(flat_colors)).reshape(X_s.shape)
+    elif "," in colormap_or_color:
+        palette = [c.strip() for c in colormap_or_color.split(",")]
+        if all(is_color_like(c) for c in palette):
+            active_cmap = ListedColormap(palette)
+            line_color_data = speed
+            print(f"[*] Custom palette detected: {palette}")
+        else:
+            print("[!] Warning: One or more colors in your palette were invalid. Falling back to viridis.")
+            active_cmap = 'viridis'
+            line_color_data = speed
     elif colormap_or_color in VALID_CMAPS:
         line_color_data = speed
         active_cmap = colormap_or_color
@@ -214,12 +229,13 @@ if __name__ == "__main__":
              "Default: 8")
     
     parser.add_argument("-c", "--cmap", type=str, default="viridis",
-        help="Color or Colormap choice. Accepts one of following five formats at a time:\n\n"
+        help="Color or Colormap choice. Accepts one of following six formats at a time:\n\n"
              "  1. MATPLOTLIB COLORMAPS: 'magma', 'inferno', 'Blues', etc. (See --list-cmaps)\n"
              "  2. BASE COLORS: 'b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'\n"
              "  3. TABLEAU & CSS NAMES: 'tab:blue', 'dodgerblue', 'limegreen', etc.\n"
              "  4. HEXADECIMAL STRINGS: '#FF5733', '#2C3E50', etc.\n"
              "  5. GRAYSCALE VALUES: '0.0' (black) to '1.0' (white).\n"
+             "  6. CUSTOM PALETTE: '#000000, #FFFFFF, red, blue' (Comma separated)\n"
              "  * Use 'random' to pick a verified colormap at random.\n"
              "Default: viridis")
     
@@ -299,6 +315,12 @@ if __name__ == "__main__":
              "Allows lines to taper out naturally before hitting the file boundary.\n"
              "Default: 0")
 
+    parser.add_argument("-pm", "--pad-mode", type=str, choices=['constant', 'replicate'], default='constant',
+        help="Padding mode if -p is used.\n"
+             "  'constant': Uses solid background color (Creates a frame/boundary).\n"
+             "  'replicate': Stretches edge pixels (Allows organic bleed).\n"
+             "Default: constant")
+
     parser.add_argument("-a", "--angle", type=float, default=0.0, 
         help="Rotate the final vector field by a specific degree angle (e.g., 45.0).\n"
              "Excellent for creating diagonal striping when paired with mismatched Sobel kernels.\n"
@@ -352,4 +374,4 @@ if __name__ == "__main__":
                         args.linewidth, args.smooth, args.sample, args.density, 
                         args.gx_ksize, args.gy_ksize, args.integration, args.maxlength, 
                         args.minlength, args.output, args.limit, args.taper, 
-                        args.unbroken, args.spread, args.norm, args.random_starts, args.padding, args.angle)
+                        args.unbroken, args.spread, args.norm, args.random_starts, args.padding, args.pad_mode, args.angle)
