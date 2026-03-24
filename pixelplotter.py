@@ -31,7 +31,7 @@ VALID_CMAPS = [
     'viridis_r', 'winter', 'winter_r'
 ]
 
-def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_color, intensity, smooth, sample_colors, density, gx_k, gy_k, integration, max_len, min_len, output_path, limit, taper, unbroken, spread, norm_type, random_starts, padding, pad_mode, angle):
+def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_color, intensity, smooth, sample_colors, density, gx_k, gy_k, integration, max_len, min_len, output_path, limit, taper, unbroken, spread, norm_type, random_starts, padding, pad_mode, angle, capstyle='butt', joinstyle='miter', invert=False):
     if not os.path.isfile(image_path):
         print(f"Error: File '{image_path}' not found.")
         return
@@ -74,8 +74,13 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
     else:
         processed_img = img_gray
 
-    img_inv = cv2.bitwise_not(processed_img)
-    norm = img_inv.astype(np.float32) / 255.0
+    if invert:
+        # Drawing mode: Focuses on the bright areas of the original image
+        norm = processed_img.astype(np.float32) / 255.0
+    else:
+        # Default mode: Focuses on the dark areas of the original image
+        img_inv = cv2.bitwise_not(processed_img)
+        norm = img_inv.astype(np.float32) / 255.0
 
     # ensures ksizes are odd and in range (max 31 for OpenCV Sobel)
     gx_k = max(1, min(31, gx_k if gx_k % 2 != 0 else gx_k + 1))
@@ -191,16 +196,34 @@ def generate_streamplot(image_path, detail, colormap_or_color, show_arrows, bg_c
     if unbroken:
         stream_kwargs['broken_streamlines'] = False
 
-    ax.streamplot(X_s, Y_s, U_s, V_s, **stream_kwargs)
+ # draw the streamplot and capture the object
+    stream = ax.streamplot(X_s, Y_s, U_s, V_s, **stream_kwargs)
+    
+    # Manually apply the cap and join styles to the generated lines
+    stream.lines.set_capstyle(capstyle)
+    stream.lines.set_joinstyle(joinstyle)
 
     ax.set_aspect('equal')
     ax.invert_yaxis()
     ax.axis('off')
 
+# automatically maximize the window
+    manager = plt.get_current_fig_manager()
+    try:
+        #win and linux
+        manager.window.showMaximized() 
+    except AttributeError:
+        try:
+            # macOS (and some linux)
+            manager.full_screen_toggle()
+        except:
+            pass # Fallback if the backend doesn't support it
+
     # Output / Display Logic
     if output_path:
         plt.savefig(output_path, dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
         print(f"Success! Output silently saved to: {output_path}")
+        plt.show()
     else:
         print("Opening display window... (Use the floppy disk icon in the toolbar to save manually)")
         plt.show()
@@ -351,6 +374,17 @@ if __name__ == "__main__":
 
     parser.add_argument("--list-cmaps", action="store_true", 
         help="Show all 160+ verified Matplotlib colormap names and exit.")
+
+    parser.add_argument("--capstyle", type=str, choices=['butt', 'round', 'projecting'], default='butt',
+        help="Cap style for line ends. Useful for smoothing thick lines.\n"
+             "Default: butt")
+
+    parser.add_argument("--joinstyle", type=str, choices=['miter', 'round', 'bevel'], default='miter',
+        help="Join style for line corners. Useful for smoothing thick lines.\n"
+             "Default: miter")
+             
+    parser.add_argument("--invert", action="store_true", 
+        help="Invert the brightness math. Swaps whether lines focus on the dark areas vs the bright areas of the original image.")
     
     parser.set_defaults(arrows=True)
 
@@ -374,4 +408,4 @@ if __name__ == "__main__":
                         args.linewidth, args.smooth, args.sample, args.density, 
                         args.gx_ksize, args.gy_ksize, args.integration, args.maxlength, 
                         args.minlength, args.output, args.limit, args.taper, 
-                        args.unbroken, args.spread, args.norm, args.random_starts, args.padding, args.pad_mode, args.angle)
+                        args.unbroken, args.spread, args.norm, args.random_starts, args.padding, args.pad_mode, args.angle, args.capstyle, args.joinstyle, args.invert)
